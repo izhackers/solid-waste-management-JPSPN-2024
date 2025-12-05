@@ -1,15 +1,41 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { WasteStatistics, AIAnalysisItem } from "../types";
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = 'gemini-1.5-flash';
+
+// ------------------------------------------------------------------
+// PENTING: Gantikan teks di dalam tanda petik di bawah dengan API Key anda.
+// Contoh: const API_KEY = "AIzaSyDxxxxxxxxxxxxxxxxxxxx";
+// ------------------------------------------------------------------
+const API_KEY = "AIzaSyAcvdR1cpIA5_PueGUa5YDaEvGMZq24zNI"; 
+
+/**
+ * Helper function to retry an async operation
+ */
+async function retryOperation<T>(operation: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      const isLastAttempt = i === retries - 1;
+      if (isLastAttempt) throw error;
+      
+      console.warn(`Percubaan ${i + 1} gagal, mencuba semula dalam ${delay}ms...`, error);
+      await new Promise(resolve => setTimeout(resolve, delay * (i + 1))); // Exponential backoff-ish
+    }
+  }
+  throw new Error("Semua percubaan gagal.");
+}
 
 export const generateAIAnalysis = async (stats: WasteStatistics): Promise<AIAnalysisItem[]> => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("API Key not found");
+  const cleanKey = API_KEY ? API_KEY.trim() : "";
+
+  if (!cleanKey || cleanKey.includes("MASUKKAN_KEY")) {
+    console.error("API Key belum ditetapkan. Sila buka services/geminiService.ts dan masukkan key.");
+    throw new Error("API Key belum ditetapkan.");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: cleanKey });
 
   const statsSummary = `
     Data Statistik Sisa Pepejal (Malaysia, 2024):
@@ -30,49 +56,62 @@ export const generateAIAnalysis = async (stats: WasteStatistics): Promise<AIAnal
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: statsSummary,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              tajuk: { 
-                type: Type.STRING, 
-                description: "Ringkasan utama dalam 5 perkataan atau kurang." 
+    const response = await retryOperation(async () => {
+      return await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        // Wrap contents in the formal structure to ensure compatibility
+        contents: {
+          parts: [{ text: statsSummary }]
+        },
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                tajuk: { 
+                  type: Type.STRING, 
+                  description: "Ringkasan utama dalam 5 perkataan atau kurang." 
+                },
+                simbol: { 
+                  type: Type.STRING, 
+                  description: "Satu ikon emoji yang relevan." 
+                },
+                huraian: { 
+                  type: Type.STRING, 
+                  description: "Huraian ringkas dan padat (maksimum 2 ayat) tentang implikasi penemuan tersebut." 
+                },
+                warna: { 
+                  type: Type.STRING, 
+                  description: "Kod warna Tailwind CSS untuk border (contoh: 'border-green-500', 'border-red-500', 'border-blue-500')." 
+                }
               },
-              simbol: { 
-                type: Type.STRING, 
-                description: "Satu ikon emoji yang relevan." 
-              },
-              huraian: { 
-                type: Type.STRING, 
-                description: "Huraian ringkas dan padat (maksimum 2 ayat) tentang implikasi penemuan tersebut." 
-              },
-              warna: { 
-                type: Type.STRING, 
-                description: "Kod warna Tailwind CSS untuk border (contoh: 'border-green-500', 'border-red-500', 'border-blue-500')." 
-              }
-            },
-            propertyOrdering: ["tajuk", "simbol", "huraian", "warna"]
+              propertyOrdering: ["tajuk", "simbol", "huraian", "warna"]
+            }
           }
         }
-      }
+      });
     });
 
-    const jsonText = response.text;
+    let jsonText = response.text;
+    
     if (!jsonText) {
-      throw new Error("No text returned from Gemini");
+      throw new Error("Tiada respons teks diterima daripada Gemini.");
     }
+
+    // Pembersihan data JSON yang lebih agresif
+    jsonText = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
 
     return JSON.parse(jsonText) as AIAnalysisItem[];
 
-  } catch (error) {
-    console.error("Gemini API Error:", error);
+  } catch (error: any) {
+    console.error("Gemini API Error selepas retry:", error);
+    // Cuba berikan mesej ralat yang lebih mesra pengguna jika ia adalah ralat 500/XHR
+    if (error.message && (error.message.includes("xhr error") || error.message.includes("500"))) {
+      throw new Error("Masalah sambungan rangkaian ke pelayan Google. Sila periksa internet anda dan cuba lagi.");
+    }
     throw error;
   }
 };
