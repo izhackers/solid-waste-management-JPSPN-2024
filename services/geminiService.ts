@@ -7,7 +7,7 @@ const GEMINI_MODEL = 'gemini-2.5-flash';
 // PENTING: Gantikan teks di dalam tanda petik di bawah dengan API Key anda.
 // Contoh: const API_KEY = "AIzaSyDxxxxxxxxxxxxxxxxxxxx";
 // ------------------------------------------------------------------
-const API_KEY = "AIzaSyAcvdR1cpIA5_PueGUa5YDaEvGMZq24zNI"; 
+const API_KEY = "AIzaSyDjLfbhgoA9t6qoI7zyKI2s-5ecgoQN_v8"; 
 
 /**
  * Helper function to retry an async operation
