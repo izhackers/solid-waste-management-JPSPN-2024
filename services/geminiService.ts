@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { WasteStatistics, AIAnalysisItem } from "../types";
 
-const GEMINI_MODEL = 'gemini-1.5-flash';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 // ------------------------------------------------------------------
 // PENTING: Gantikan teks di dalam tanda petik di bawah dengan API Key anda.
